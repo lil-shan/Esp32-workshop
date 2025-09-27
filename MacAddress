@@ -1,0 +1,23 @@
+#include <WiFi.h>
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);  // give Serial time to start
+
+  // Put ESP32 in Station mode (needed for ESP-NOW)
+  WiFi.mode(WIFI_STA);
+
+  // Print Station MAC
+  delay(1000); 
+  delay(1000); 
+  Serial.print("ESP32 MAC Address (STA): ");
+  Serial.println(WiFi.macAddress());
+
+  // Print SoftAP MAC (optional)
+  Serial.print("ESP32 MAC Address (AP):  ");
+  Serial.println(WiFi.softAPmacAddress());
+}
+
+void loop() {
+  // nothing here
+}
