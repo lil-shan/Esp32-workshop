@@ -3,9 +3,10 @@
 #include "DHT.h"
 
 // --------- Sensor Pins ------------
-#define DHTPIN 26        // DHT11 data pin
+#define DHTPIN 26       // DHT11 data pin
 #define DHTTYPE DHT11   // Sensor type
 #define IR_PIN 25       // IR sensor output pin
+#define LED_PIN 2       // On-board LED (GPIO2)
 
 // --------- WiFi SoftAP Credentials ------------
 const char* ssid = "RoomMonitor";     
@@ -15,20 +16,28 @@ const char* password = "12345678";
 DHT dht(DHTPIN, DHTTYPE);
 WebServer server(80);
 
-// --------- Handle Main Page (HTML + JS) ------------
+// Track LED state
+bool ledState = false;
+
+// --------- Main Page (HTML + JS) ------------
 void handleRoot() {
   String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
   html += "<title>ESP32 Room Monitor</title>";
   html += "<style>body{font-family:Arial;text-align:center;background:#f4f4f4;}";
   html += "h1{color:#333;} .card{background:#fff;padding:20px;margin:20px;display:inline-block;";
-  html += "border-radius:10px;box-shadow:0px 0px 10px #aaa;}</style></head><body>";
+  html += "border-radius:10px;box-shadow:0px 0px 10px #aaa;}";
+  html += "button{padding:10px 20px;font-size:16px;border:none;border-radius:5px;cursor:pointer;}";
+  html += ".on{background:green;color:white;} .off{background:red;color:white;}";
+  html += "</style></head><body>";
 
   html += "<h1>ESP32 Room Monitor</h1>";
   html += "<div id='temp' class='card'><h2>Temperature: -- °C</h2></div>";
   html += "<div id='hum' class='card'><h2>Humidity: -- %</h2></div>";
   html += "<div id='motion' class='card'><h2>Status: --</h2></div>";
+  html += "<div id='led' class='card'><h2>LED Control</h2>";
+  html += "<button id='ledBtn' class='off' onclick='toggleLED()'>Turn ON</button></div>";
 
-  // JavaScript for real-time updates
+  // JavaScript for real-time updates + LED control
   html += "<script>";
   html += "function updateData(){";
   html += "fetch('/data').then(r=>r.json()).then(d=>{";
@@ -37,9 +46,11 @@ void handleRoot() {
   html += "if(d.motion==1){";
   html += "document.getElementById('motion').innerHTML='<h2 style=\"color:red;\">Motion Detected</h2>';}";
   html += "else{document.getElementById('motion').innerHTML='<h2 style=\"color:green;\">No Motion Detected</h2>';}";
+  html += "if(d.led==1){document.getElementById('ledBtn').innerText='Turn OFF';document.getElementById('ledBtn').className='on';}";
+  html += "else{document.getElementById('ledBtn').innerText='Turn ON';document.getElementById('ledBtn').className='off';}";
   html += "});}";
-  html += "setInterval(updateData, 1000);"; // update every second
-  html += "updateData();"; // run once on load
+  html += "function toggleLED(){fetch('/toggleLED').then(()=>updateData());}";
+  html += "setInterval(updateData, 1000); updateData();";
   html += "</script>";
 
   html += "</body></html>";
@@ -52,35 +63,40 @@ void handleData() {
   float t = dht.readTemperature();
   int irStatus = digitalRead(IR_PIN);
 
-  // Fallback in case DHT fails
-  if (isnan(h) || isnan(t)) {
-    h = 0;
-    t = 0;
-  }
+  if (isnan(h) || isnan(t)) { h = 0; t = 0; }
 
   String json = "{";
   json += "\"temperature\":" + String(t) + ",";
   json += "\"humidity\":" + String(h) + ",";
-  json += "\"motion\":" + String(irStatus == LOW ? 1 : 0);
+  json += "\"motion\":" + String(irStatus == LOW ? 1 : 0) + ",";
+  json += "\"led\":" + String(ledState ? 1 : 0);
   json += "}";
 
   server.send(200, "application/json", json);
+}
+
+// --------- Toggle LED ------------
+void handleToggleLED() {
+  ledState = !ledState;
+  digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+  server.send(200, "text/plain", "OK");
 }
 
 void setup() {
   Serial.begin(115200);
   dht.begin();
   pinMode(IR_PIN, INPUT);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW); // Start with LED off
 
-  // Start SoftAP
   WiFi.softAP(ssid, password);
   Serial.println("ESP32 started as SoftAP");
   Serial.print("SSID: "); Serial.println(ssid);
   Serial.print("IP Address: "); Serial.println(WiFi.softAPIP());
 
-  // Routes
   server.on("/", handleRoot);
   server.on("/data", handleData);
+  server.on("/toggleLED", handleToggleLED);
 
   server.begin();
   Serial.println("Web server started");
@@ -89,3 +105,4 @@ void setup() {
 void loop() {
   server.handleClient();
 }
+
